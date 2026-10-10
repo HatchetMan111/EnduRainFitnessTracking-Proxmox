@@ -253,6 +253,8 @@ UPSTREAM_REPO="$UPSTREAM_REPO"
 echo "[PROV] apt update ..."
 export DEBIAN_FRONTEND=noninteractive
 export LC_ALL=C.UTF-8
+# pct exec liefert ein minimales PATH ohne /usr/local/bin — dort liegt aber uv.
+export PATH="/usr/local/bin:/usr/local/sbin:\$PATH"
 apt-get update -qq
 apt-get install -y -qq curl wget git sudo openssl ca-certificates build-essential \
   python3 python3-venv python3-dev libpq-dev \
@@ -283,6 +285,8 @@ if [[ -f "\$APP_DIR/backend/pyproject.toml" ]]; then
 fi
 if ! command -v uv >/dev/null 2>&1 || ! uv --version 2>/dev/null | grep -q "\$UV_WANT"; then
   echo "[PROV] installiere uv \$UV_WANT ..."
+  # Karteileiche aus fehlgeschlagenem install.sh-Versuch (falsche Version, nicht im PATH)
+  rm -f /root/.local/bin/uv /root/.local/bin/uvx 2>/dev/null || true
   if ! curl -LsSf "https://github.com/astral-sh/uv/releases/download/\${UV_WANT}/uv-x86_64-unknown-linux-gnu.tar.gz" -o /tmp/uv.tgz \
     || ! tar xzf /tmp/uv.tgz -C /tmp \
     || ! install -m 0755 /tmp/uv-x86_64-unknown-linux-gnu/uv /usr/local/bin/uv; then
@@ -303,6 +307,9 @@ mkdir -p "\$DATA_BASE/data" "\$DATA_BASE/logs"
 chown -R "$APP_USER:$APP_USER" "\$DATA_BASE"
 
 # --- App-Code (Clone oder Pull = idempotent) ---
+# /opt/endurain gehört APP_USER, Provision läuft als root → git braucht safe.directory.
+git config --global --get-all safe.directory 2>/dev/null | grep -Fxq "\$APP_DIR" \
+  || git config --global --add safe.directory "\$APP_DIR"
 if [[ ! -d "\$APP_DIR/.git" ]]; then
   echo "[PROV] klone \$UPSTREAM_REPO ..."
   rm -rf "\$APP_DIR"
