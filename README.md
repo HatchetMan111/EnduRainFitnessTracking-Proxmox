@@ -113,6 +113,10 @@ pct stop 100 && pct destroy 100       # Deinstall
 - Jeder Fehler gibt Befehl + Zeile + Exit-Code aus, Voll-Log unter `/tmp/endurain-install-*.log`.
 - `bash endurain.sh --debug` für `bash -x`-Trace.
 - Im Container: `systemctl status endurain --no-pager`, `journalctl -u endurain -n 100`.
+- DB-Encoding muss UTF8 sein (SQL_ASCII lässt psycopg3 bytes liefern → SQLAlchemy-Crash-Loop,
+  erkennbar an `TypeError: cannot use a string pattern on a bytes-like object`).
+  Prüfen: `pct exec <CT> -- su postgres -c "psql -Atc \"SELECT pg_encoding_to_char(encoding) FROM pg_database WHERE datname='enduraindb'\""`.
+  Der Installer legt fehlende/SQL_ASCII-DBs automatisch als UTF8 neu an; bestehende UTF8-DBs tastet er nie an.
 - Erster Start dauert: Alembic-Migrationen laufen beim ersten Boot automatisch.
 
 ## Dateien

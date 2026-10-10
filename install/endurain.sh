@@ -338,8 +338,21 @@ export DB_PASSWORD
 su postgres -c "psql -tc \"SELECT 1 FROM pg_roles WHERE rolname='\$PG_DB_USER'\"" | grep -q 1 \
   || su postgres -c "psql -c \"CREATE ROLE \$PG_DB_USER LOGIN PASSWORD '\$DB_PASSWORD'\""
 su postgres -c "psql -c \"ALTER ROLE \$PG_DB_USER WITH PASSWORD '\$DB_PASSWORD'\""
-su postgres -c "psql -tc \"SELECT 1 FROM pg_database WHERE datname='\$PG_DB_NAME'\"" | grep -q 1 \
-  || su postgres -c "psql -c \"CREATE DATABASE \$PG_DB_NAME OWNER \$PG_DB_USER\""
+# DB-Encoding prüfen: SQL_ASCII lässt psycopg3 bytes statt str liefern →
+# Upstream-Crash in SQLAlchemy (_get_server_version_info), Crash-Loop.
+# Nur SQL_ASCII- oder fehlende DBs als UTF8 (template0, C.UTF-8) neu anlegen;
+# existierende UTF8-DBs (ggf. mit Nutzdaten) werden nie angefasst.
+DB_ENC="\$(su postgres -c "psql -Atc \"SELECT pg_encoding_to_char(encoding) FROM pg_database WHERE datname='\$PG_DB_NAME'\"" | tr -d '[:space:]')"
+if [[ "\$DB_ENC" == "SQL_ASCII" ]]; then
+  echo "[PROV] DB-Encoding SQL_ASCII erkannt -> lege DB als UTF8 neu an (Installer-DB: App konnte nie verbinden, keine Nutzdaten möglich) ..."
+  su postgres -c "psql -c \"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='\$PG_DB_NAME' AND pid <> pg_backend_pid();\"" || true
+  su postgres -c "psql -c \"DROP DATABASE \$PG_DB_NAME\""
+  su postgres -c "psql -c \"CREATE DATABASE \$PG_DB_NAME OWNER \$PG_DB_USER ENCODING 'UTF8' LC_COLLATE 'C.UTF-8' LC_CTYPE 'C.UTF-8' TEMPLATE template0\""
+elif [[ -z "\$DB_ENC" ]]; then
+  su postgres -c "psql -c \"CREATE DATABASE \$PG_DB_NAME OWNER \$PG_DB_USER ENCODING 'UTF8' LC_COLLATE 'C.UTF-8' LC_CTYPE 'C.UTF-8' TEMPLATE template0\""
+else
+  echo "[PROV] DB-Encoding ist \$DB_ENC - OK."
+fi
 su postgres -c "psql -d \$PG_DB_NAME -c 'CREATE EXTENSION IF NOT EXISTS postgis'" >/dev/null 2>&1 || true
 echo "[PROV] DB \$PG_DB_NAME + Rolle \$PG_DB_USER OK."
 
