@@ -556,8 +556,10 @@ else
   fi
 fi
 
-if pct exec "$CT_ID" -- curl -kfs "https://localhost/api/v1/about" >/dev/null 2>&1; then
-  msg_ok "HTTPS-Proxy antwortet (HTTP 200 via Caddy auf https://localhost/api/v1/about, -k wegen self-signed)."
+# Hinweis: gegen die Container-IP prüfen (vom Host aus), nicht localhost im CT —
+# der Caddy-Site-Block hängt an der CT-IP (SNI-Match), localhost hätte kein Zertifikat.
+if curl -kfs "https://${CT_IP}/api/v1/about" >/dev/null 2>&1; then
+  msg_ok "HTTPS-Proxy antwortet (HTTP 200 via Caddy auf https://${CT_IP}/api/v1/about, -k wegen self-signed)."
 else
   msg_error "HTTPS-Proxy antwortet NICHT."
   msg_error "--- journalctl -u caddy (letzte 50 Zeilen, für Diagnose) ---"
