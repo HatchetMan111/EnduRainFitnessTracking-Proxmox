@@ -561,18 +561,23 @@ fi
 # Polling wie beim Backend: Restarts/Reloads aus der Provisionierung können
 # einzelne Versuche ins Leere laufen lassen.
 HTTPS_OK=0
+HTTPS_LAST="n/a"
 for _j in $(seq 1 36); do
-  if pct exec "$CT_ID" -- curl -kfs --resolve "${CT_IP}:443:127.0.0.1" "https://${CT_IP}/api/v1/about" >/dev/null 2>&1; then
+  HTTPS_OUT="$(pct exec "$CT_ID" -- curl -k -s -o /dev/null -w "%{http_code}" --resolve "${CT_IP}:443:127.0.0.1" "https://${CT_IP}/api/v1/about" 2>&1)"
+  HTTPS_EC=$?
+  HTTPS_LAST="exit=${HTTPS_EC} http=${HTTPS_OUT}"
+  if [[ $HTTPS_EC -eq 0 && "$HTTPS_OUT" == "200" ]]; then
     HTTPS_OK=1
     break
   fi
   sleep 5
-  if (( _j % 6 == 0 )); then msg_info "… noch kein HTTPS nach $((_j*5))s, warte weiter ..."; fi
+  if (( _j % 6 == 0 )); then msg_info "… noch kein HTTPS nach $((_j*5))s (letzter Versuch: $HTTPS_LAST), warte weiter ..."; fi
 done
 if [[ "$HTTPS_OK" -eq 1 ]]; then
   msg_ok "HTTPS-Proxy antwortet (HTTP 200 via Caddy auf https://${CT_IP}/api/v1/about, -k wegen self-signed)."
 else
-  msg_error "HTTPS-Proxy antwortet NICHT."
+  msg_error "HTTPS-Proxy antwortet NICHT (letzter Versuch: $HTTPS_LAST)."
+  msg_error "Zum manuellen Nachstellen: pct exec $CT_ID -- curl -kv --resolve \"${CT_IP}:443:127.0.0.1\" \"https://${CT_IP}/api/v1/about\""
   msg_error "--- journalctl -u caddy (letzte 50 Zeilen, für Diagnose) ---"
   pct exec "$CT_ID" -- journalctl -u caddy -n 50 --no-pager || true
   msg_error "--- Listener (443/80/8080) ---"
