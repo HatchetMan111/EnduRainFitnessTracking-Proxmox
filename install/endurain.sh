@@ -556,14 +556,15 @@ else
   fi
 fi
 
-# Hinweis: Prüfung läuft IM Container mit --resolve (SNI=CT-IP auf 127.0.0.1),
-# exakt wie für LAN-Clients (Zertifikat+Proxy+Backend), aber ohne Host-Routing.
-# Polling wie beim Backend: Restarts/Reloads aus der Provisionierung können
-# einzelne Versuche ins Leere laufen lassen.
+# Hinweis: vom Host gegen die CT-IP prüfen = exakt der Pfad, den LAN-Clients
+# und Browser nutzen (SNI=CT-IP, Caddy-Zertifikat, Proxy, Backend). In-CT per
+# --resolve scheitert reproduzierbar auf TLS-Ebene und wird nicht verwendet.
+# Polling: Restarts/Reloads aus der Provisionierung können einzelne Versuche
+# ins Leere laufen lassen.
 HTTPS_OK=0
 HTTPS_LAST="n/a"
 for _j in $(seq 1 36); do
-  HTTPS_OUT="$(pct exec "$CT_ID" -- curl -k -s -o /dev/null -w "%{http_code}" --resolve "${CT_IP}:443:127.0.0.1" "https://${CT_IP}/api/v1/about" 2>&1)"
+  HTTPS_OUT="$(curl -k -s -o /dev/null -w "%{http_code}" "https://${CT_IP}/api/v1/about" 2>&1)"
   HTTPS_EC=$?
   HTTPS_LAST="exit=${HTTPS_EC} http=${HTTPS_OUT}"
   if [[ $HTTPS_EC -eq 0 && "$HTTPS_OUT" == "200" ]]; then
@@ -577,7 +578,7 @@ if [[ "$HTTPS_OK" -eq 1 ]]; then
   msg_ok "HTTPS-Proxy antwortet (HTTP 200 via Caddy auf https://${CT_IP}/api/v1/about, -k wegen self-signed)."
 else
   msg_error "HTTPS-Proxy antwortet NICHT (letzter Versuch: $HTTPS_LAST)."
-  msg_error "Zum manuellen Nachstellen: pct exec $CT_ID -- curl -kv --resolve \"${CT_IP}:443:127.0.0.1\" \"https://${CT_IP}/api/v1/about\""
+  msg_error "Zum manuellen Nachstellen: curl -k -o /dev/null -w \"HTTP:%{http_code}\" \"https://${CT_IP}/api/v1/about\""
   msg_error "--- journalctl -u caddy (letzte 50 Zeilen, für Diagnose) ---"
   pct exec "$CT_ID" -- journalctl -u caddy -n 50 --no-pager || true
   msg_error "--- Listener (443/80/8080) ---"
