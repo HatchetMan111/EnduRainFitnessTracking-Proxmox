@@ -98,7 +98,9 @@ Strava zu verbinden ist **optional**. Aktivitäten kommen auf drei Wegen rein:
 1. **Mobile App (aufzeichnen wie bei Strava):** Die Endurain-App
    ([endurain-flutter](https://github.com/endurain-project/endurain-flutter), Flutter)
    läuft live mit Karte mit (Run, Ride, Walk, Hike), arbeitet offline und lädt bei
-   Verbindung auf deinen Server — dort `https://<LXC-IP>` als Server eintragen.
+   Verbindung auf deinen Server — in der App **Protokoll `https`** wählen und als
+   Server-Adresse **nur** `<LXC-IP>` eintragen (**ohne** `https://` davor, sonst meldet
+   die App „Bitte gib eine gültige URL ein").
    iOS: öffentliche Beta über [TestFlight](https://testflight.apple.com/join/BjZ4DWPa)
    (Apple-TestFlight-App aus dem App Store installieren, Einladungs-Link öffnen;
    Beta-Builds laufen ab und müssen aktualisiert werden). Android: in Entwicklung, Play folgt.
