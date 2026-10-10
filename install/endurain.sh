@@ -558,7 +558,18 @@ fi
 
 # Hinweis: Prüfung läuft IM Container mit --resolve (SNI=CT-IP auf 127.0.0.1),
 # exakt wie für LAN-Clients (Zertifikat+Proxy+Backend), aber ohne Host-Routing.
-if pct exec "$CT_ID" -- curl -kfs --resolve "${CT_IP}:443:127.0.0.1" "https://${CT_IP}/api/v1/about" >/dev/null 2>&1; then
+# Polling wie beim Backend: Restarts/Reloads aus der Provisionierung können
+# einzelne Versuche ins Leere laufen lassen.
+HTTPS_OK=0
+for _j in $(seq 1 36); do
+  if pct exec "$CT_ID" -- curl -kfs --resolve "${CT_IP}:443:127.0.0.1" "https://${CT_IP}/api/v1/about" >/dev/null 2>&1; then
+    HTTPS_OK=1
+    break
+  fi
+  sleep 5
+  if (( _j % 6 == 0 )); then msg_info "… noch kein HTTPS nach $((_j*5))s, warte weiter ..."; fi
+done
+if [[ "$HTTPS_OK" -eq 1 ]]; then
   msg_ok "HTTPS-Proxy antwortet (HTTP 200 via Caddy auf https://${CT_IP}/api/v1/about, -k wegen self-signed)."
 else
   msg_error "HTTPS-Proxy antwortet NICHT."
