@@ -597,6 +597,7 @@ echo "  Web UI       : https://$CT_IP  (self-signed – Browser-Warnung einmal b
 echo "  API-Check    : https://$CT_IP/api/v1/about"
 echo "  Erst-Login   : admin / admin (Upstream-Default – sofort ändern!)"
 echo "  Registrieren : als Admin einloggen → Settings → Server settings → signup einschalten"
+echo "  Nutzung      : ohne Strava möglich (App-Recording, Datei-Upload, optional Sync) – s. README"
 echo "  HTTP         : http://$CT_IP → Redirect auf HTTPS"
 if [[ "${GENERATED_PW:-0}" -eq 1 ]]; then
 echo "  CT-Root-PW   : $PASSWORD_ARG (nur dieses Mal angezeigt!)"

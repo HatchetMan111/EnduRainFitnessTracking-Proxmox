@@ -91,6 +91,24 @@ kennt den Proxy (`BEHIND_PROXY=true`, `TRUSTED_PROXIES=127.0.0.1`).
   „Domain + Caddy (Let's Encrypt)"-Variante. Garmin-Sync und Datei-Uploads (.gpx/.tcx/.fit)
   funktionieren im LAN auch so.
 
+## Nutzung: Strava-Pflicht? Nein — 3 Wege zu Aktivitäten
+
+Strava zu verbinden ist **optional**. Aktivitäten kommen auf drei Wegen rein:
+
+1. **Mobile App (aufzeichnen wie bei Strava):** Die Endurain-App läuft live mit Karte mit
+   (Run, Ride, Walk, Hike), arbeitet offline und lädt bei Verbindung auf deinen Server —
+   dort `https://<LXC-IP>` als Server eintragen. Stand: Android in Entwicklung (Play folgt),
+   iOS als TestFlight-Beta (siehe endurain.com). Hinweis: self-signed Zertifikat ggf. auf dem
+   Handy akzeptieren bzw. die CA installieren.
+2. **Datei-Upload (geht immer, ohne alles):** `.gpx`/`.tcx`/`.fit` (bevorzugt `.fit`) über die
+   Web-UI importieren — z. B. von Radcomputer, Uhr oder anderen Apps exportiert.
+3. **Sync (optional):** Strava- oder Garmin-Connect-Konto in den User-Einstellungen
+   (Integrationen) verbinden. Strava braucht zusätzlich Client-ID/Secret und eine öffentliche
+   https-Domain — geht mit self-signed LAN-Zertifikat nicht.
+
+Erste Schritte: als `admin` einloggen → Passwort ändern → ggf. `signup_enabled` einschalten →
+App verbinden oder erste Datei hochladen.
+
 ## Erster Login / Registrierung
 
 - Default-Zugang laut Upstream-Doku: `admin` / `admin` — nach dem Login sofort Passwort ändern
