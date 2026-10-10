@@ -255,6 +255,9 @@ export DEBIAN_FRONTEND=noninteractive
 export LC_ALL=C.UTF-8
 # pct exec liefert ein minimales PATH ohne /usr/local/bin — dort liegt aber uv.
 export PATH="/usr/local/bin:/usr/local/sbin:\$PATH"
+# Altlast entfernen: defektes Cloudsmith-Caddy-Apt-Repo (402 Payment Required)
+# aus älterem Installer-Run — sonst scheitert jedes apt-get update.
+rm -f /etc/apt/sources.list.d/caddy-stable.list /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 apt-get update -qq
 apt-get install -y -qq curl wget git sudo openssl ca-certificates build-essential \
   python3 python3-venv python3-dev libpq-dev \
@@ -401,30 +404,55 @@ uv sync --frozen --no-dev
 chown -R "$APP_USER:$APP_USER" "\$APP_DIR/backend/.venv" 2>/dev/null || true
 echo "[PROV] Backend OK."
 
-# --- Caddy HTTPS-Reverse-Proxy (self-signed, tls internal) ---
-if ! command -v caddy >/dev/null 2>&1; then
-  echo "[PROV] installiere Caddy ..."
-  apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https gnupg >/dev/null
-  curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/gpg.key \
-    | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-  curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt \
-    | tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
-  apt-get update -qq
-  apt-get install -y -qq caddy >/dev/null
+# --- Caddy HTTPS-Reverse-Proxy (self-signed, tls internal, v2.11.7) ---
+# Hinweis: NICHT via apt/Cloudsmith — dl.cloudsmith.io antwortet mit 402 Payment Required.
+# Stattdessen deterministischer Binary-Download von GitHub Releases + eigene systemd-Unit.
+CADDY_WANT="2.11.7"
+if ! command -v caddy >/dev/null 2>&1 || ! caddy version 2>/dev/null | grep -q "\$CADDY_WANT"; then
+  echo "[PROV] installiere Caddy \$CADDY_WANT ..."
+  curl -LsSf "https://github.com/caddyserver/caddy/releases/download/v\${CADDY_WANT}/caddy_\${CADDY_WANT}_linux_amd64.tar.gz" -o /tmp/caddy.tgz \
+    && tar xzf /tmp/caddy.tgz -C /tmp caddy \
+    && install -m 0755 /tmp/caddy /usr/local/bin/caddy
+  rm -rf /tmp/caddy.tgz /tmp/caddy
+  hash -r 2>/dev/null || true
 fi
 echo "[PROV] caddy=\$(caddy version)"
+mkdir -p /etc/caddy
 cat > /etc/caddy/Caddyfile <<CADDY_EOF
 https://\$CT_IP {
 	tls internal
-	reverse_proxy 127.0.0.1:$APP_PORT
+	reverse_proxy 127.0.0.1:8080
 }
 
 http://\$CT_IP {
 	redir https://{host}{uri}
 }
 CADDY_EOF
-systemctl enable --now caddy >/dev/null 2>&1 || service caddy start || true
-caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || systemctl restart caddy
+cat > /etc/systemd/system/caddy.service <<CADDYUNIT_EOF
+[Unit]
+Description=Caddy HTTPS-Reverse-Proxy (Endurain)
+Documentation=https://caddyserver.com/docs/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/local/bin/caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --force
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+CADDYUNIT_EOF
+systemctl daemon-reload
+/usr/local/bin/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+systemctl enable --now caddy
+/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null || systemctl restart caddy
 echo "[PROV] Caddy-HTTPS auf https://\$CT_IP aktiv (self-signed, Browser-Warnung einmal bestätigen)."
 
 # --- systemd-Service ---

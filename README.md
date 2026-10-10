@@ -28,7 +28,7 @@ bash endurain.sh --debug   # = bash -x, komplette Fehlermeldungskette + Log unte
 |---|---|
 | App-Name / Hostname | `endurain` |
 | Zweck | Self-hosted Fitness-Tracking (Strava-Alternative): Aktivitäten via .gpx/.tcx/.fit, Strava-/Garmin-Sync, Karten, Statistiken – volle Datenhoheit |
-| Tech-Stack | Python 3.13/FastAPI (uv, `uvicorn main:app` nur auf `127.0.0.1:8080` mit `--proxy-headers`) + Vue 3 SPA (`npm ci` + `npm run build` nach `/opt/endurain/frontend/dist`) + PostgreSQL (+PostGIS) + Redis lokal + Caddy (`tls internal`, self-signed, `:443`, HTTP→HTTPS-Redirect) |
+| Tech-Stack | Python 3.13/FastAPI (uv, `uvicorn main:app` nur auf `127.0.0.1:8080` mit `--proxy-headers`) + Vue 3 SPA (`npm ci` + `npm run build` nach `/opt/endurain/frontend/dist`) + PostgreSQL (+PostGIS) + Redis lokal + Caddy v2.11.7 (Binary von GitHub Releases, `tls internal`, self-signed, `:443`, HTTP→HTTPS-Redirect) |
 | GitHub-Repo (Upstream) | `https://github.com/endurain-project/endurain` |
 | Web UI | `https://<LXC-IP>` (HTTP auf Port 80 leitet um; Health: `/api/v1/about`; Browser-Warnung wegen self-signed einmal bestätigen) |
 | Standard-Ressourcen | 2 vCPU / 4096 MB RAM / 8 GB Disk (Frontend-Build + Backend + DB brauchen das; offizielles `ct/endurain.sh`: 2/4096/5) |
@@ -78,7 +78,7 @@ Darum läuft Caddy mit self-signed Zertifikat (`tls internal`) vor dem Backend, 
 kennt den Proxy (`BEHIND_PROXY=true`, `TRUSTED_PROXIES=127.0.0.1`).
 
 - **Browser:** Warnung „unsicher / self-signed" einmal bestätigen (oder die Caddy-CA aus
-  `/var/lib/caddy/pki/authorities/local/root.crt` im Container ins System importieren).
+  `/root/.local/share/caddy/pki/authorities/local/root.crt` im Container ins System importieren).
 - **Mobile-App (GPS-Runs wie bei Strava):** Die Aufzeichnung selbst braucht kein HTTPS
   (native App, offline-fähig) – aber **Login + Sync zum Server schon**. Ggf. muss das
   self-signed Zertifikat auf dem Handy akzeptiert/installiert werden (Android: Nutzer-CA,
