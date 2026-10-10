@@ -164,11 +164,23 @@ pick_storage() {
 STORAGE="$(pick_storage)"
 msg_info "Storage: rootfs=$STORAGE, templates=$TEMPLATE_STORE, bridge=$BRIDGE"
 
-# Template: neuestes debian-13-standard, ggf. laden
-TEMPLATE="$(pveam available --section system 2>/dev/null | grep -o "${DEFAULT_OS}[^ ]*amd64[^ ]*tar\.[gx]z" | sort -V | tail -n1 || true)"
-[[ -n "$TEMPLATE" ]] || TEMPLATE="$(pveam available --section system 2>/dev/null | grep -o "${DEFAULT_OS}[^ ]*tar\.[gx]z" | sort -V | tail -n1 || true)"
-[[ -n "$TEMPLATE" ]] || { msg_error "Kein ${DEFAULT_OS}-Template auf $TEMPLATE_STORE gefunden."; exit 1; }
-if ! pveam list "$TEMPLATE_STORE" 2>/dev/null | grep -q "$TEMPLATE"; then
+# Template: neuestes debian-13-standard (ggf. Fallback), ggf. laden
+# Hinweis: aktuelle Proxmox-Templates sind .tar.zst (zstd), nicht .tar.gz!
+pveam update >/dev/null 2>&1 || msg_warn "pveam update scheiterte – nutze vorhandene Template-Liste."
+AVAILABLE_TEMPLATES="$(pveam available --section system 2>/dev/null || true)"
+TEMPLATE="$(printf '%s' "$AVAILABLE_TEMPLATES" | grep -oP "${DEFAULT_OS}[^ ]*amd64[^ ]*\.tar\.(gz|xz|zst)" | sort -V | tail -n1 || true)"
+if [[ -z "${TEMPLATE:-}" ]]; then
+  msg_warn "Kein ${DEFAULT_OS}-Template gefunden – versuche Fallback (neuestes debian-*-standard) ..."
+  TEMPLATE="$(printf '%s' "$AVAILABLE_TEMPLATES" | grep -oP "debian-[0-9]+-standard[^ ]*amd64[^ ]*\.tar\.(gz|xz|zst)" | sort -V | tail -n1 || true)"
+fi
+if [[ -z "${TEMPLATE:-}" ]]; then
+  msg_error "Kein Debian-Standard-Template gefunden (weder ${DEFAULT_OS} noch Fallback)."
+  msg_error "Verfügbare Templates (erste 20 Zeilen):"
+  printf '%s\n' "$AVAILABLE_TEMPLATES" | head -n 20 >&2 || true
+  msg_error "Bitte 'pveam update' manuell prüfen (Netz/DNS auf dem Host)."
+  exit 1
+fi
+if ! pveam list "$TEMPLATE_STORE" 2>/dev/null | grep -Fq "$TEMPLATE"; then
   msg_info "Lade Template $TEMPLATE_STORE:vztmpl/$TEMPLATE ..."
   pveam download "$TEMPLATE_STORE" "$TEMPLATE"
 fi
