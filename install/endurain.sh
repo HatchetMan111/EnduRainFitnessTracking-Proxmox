@@ -556,14 +556,16 @@ else
   fi
 fi
 
-# Hinweis: gegen die Container-IP prüfen (vom Host aus), nicht localhost im CT —
-# der Caddy-Site-Block hängt an der CT-IP (SNI-Match), localhost hätte kein Zertifikat.
-if curl -kfs "https://${CT_IP}/api/v1/about" >/dev/null 2>&1; then
+# Hinweis: Prüfung läuft IM Container mit --resolve (SNI=CT-IP auf 127.0.0.1),
+# exakt wie für LAN-Clients (Zertifikat+Proxy+Backend), aber ohne Host-Routing.
+if pct exec "$CT_ID" -- curl -kfs --resolve "${CT_IP}:443:127.0.0.1" "https://${CT_IP}/api/v1/about" >/dev/null 2>&1; then
   msg_ok "HTTPS-Proxy antwortet (HTTP 200 via Caddy auf https://${CT_IP}/api/v1/about, -k wegen self-signed)."
 else
   msg_error "HTTPS-Proxy antwortet NICHT."
   msg_error "--- journalctl -u caddy (letzte 50 Zeilen, für Diagnose) ---"
   pct exec "$CT_ID" -- journalctl -u caddy -n 50 --no-pager || true
+  msg_error "--- Listener (443/80/8080) ---"
+  pct exec "$CT_ID" -- ss -tlnp 2>/dev/null | grep -E ':443|:80|:8080' || true
   msg_error "Backend direkt prüfen: pct exec $CT_ID -- journalctl -u $APP -n 100"
   exit 1
 fi
