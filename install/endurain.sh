@@ -252,8 +252,9 @@ UPSTREAM_REPO="$UPSTREAM_REPO"
 
 echo "[PROV] apt update ..."
 export DEBIAN_FRONTEND=noninteractive
+export LC_ALL=C.UTF-8
 apt-get update -qq
-apt-get install -y -qq curl wget git openssl ca-certificates build-essential \
+apt-get install -y -qq curl wget git sudo openssl ca-certificates build-essential \
   python3 python3-venv python3-dev libpq-dev \
   postgresql postgresql-contrib redis-server >/dev/null
 
@@ -272,20 +273,27 @@ if ! command -v node >/dev/null 2>&1 || ! node --version | grep -Eq "v(22|24|25|
 fi
 echo "[PROV] node=\$(node --version) npm=\$(npm --version)"
 
-# --- uv (gepinnt aus pyproject, Fallback 0.12.23) ---
-want_uv() {
-  local v=""
-  if [[ -f "\$APP_DIR/backend/pyproject.toml" ]]; then
-    v="\$(grep -Po 'required-version\\s*=\\s*\"\\K[^\"]+' "\$APP_DIR/backend/pyproject.toml" 2>/dev/null || true)"
-  fi
-  [[ -n "\$v" ]] || v="0.12.23"
-  echo "\$v"
-}
-UV_WANT="\$(want_uv)"
-if ! command -v uv >/dev/null 2>&1 || ! uv --version | grep -q "\$UV_WANT"; then
+# --- uv (deterministisch gepinnt, Fallback 0.12.23 = Upstream required-version) ---
+# Hinweis: NICHT via astral.sh/install.sh — dessen Pinning per UV_VERSION-Env
+# ist unzuverlässig (lud 0.13.0 statt 0.12.23, Binary landete nicht im PATH).
+UV_WANT="0.12.23"
+if [[ -f "\$APP_DIR/backend/pyproject.toml" ]]; then
+  _uv_want="\$(grep -Po 'required-version\\s*=\\s*\"\\K[^\"]+' "\$APP_DIR/backend/pyproject.toml" 2>/dev/null || true)"
+  [[ -n "\${_uv_want:-}" ]] && UV_WANT="\$_uv_want"
+fi
+if ! command -v uv >/dev/null 2>&1 || ! uv --version 2>/dev/null | grep -q "\$UV_WANT"; then
   echo "[PROV] installiere uv \$UV_WANT ..."
-  curl -LsSf https://astral.sh/uv/install.sh | env UV_VERSION="\$UV_WANT" sh >/dev/null
-  ln -sf /root/.local/bin/uv /usr/local/bin/uv
+  if ! curl -LsSf "https://github.com/astral-sh/uv/releases/download/\${UV_WANT}/uv-x86_64-unknown-linux-gnu.tar.gz" -o /tmp/uv.tgz \
+    || ! tar xzf /tmp/uv.tgz -C /tmp \
+    || ! install -m 0755 /tmp/uv-x86_64-unknown-linux-gnu/uv /usr/local/bin/uv; then
+    echo "[PROV] Direkt-Download fehlgeschlagen, Fallback: install.sh ..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null
+    export PATH="\$HOME/.local/bin:\$HOME/.cargo/bin:\$PATH"
+    _uv_bin="\$(command -v uv 2>/dev/null || find /root/.local /root/.cargo /usr/local -name uv -type f 2>/dev/null | head -n1 || true)"
+    [[ -n "\${_uv_bin:-}" ]] && ln -sf "\$_uv_bin" /usr/local/bin/uv
+  fi
+  rm -rf /tmp/uv.tgz /tmp/uv-x86_64-unknown-linux-gnu
+  hash -r 2>/dev/null || true
 fi
 echo "[PROV] uv=\$(uv --version)"
 
