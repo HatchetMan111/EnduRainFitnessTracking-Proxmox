@@ -91,6 +91,14 @@ kennt den Proxy (`BEHIND_PROXY=true`, `TRUSTED_PROXIES=127.0.0.1`).
   „Domain + Caddy (Let's Encrypt)"-Variante. Garmin-Sync und Datei-Uploads (.gpx/.tcx/.fit)
   funktionieren im LAN auch so.
 
+## Erster Login / Registrierung
+
+- Default-Zugang laut Upstream-Doku: `admin` / `admin` — nach dem Login sofort Passwort ändern
+  (Admin-Passwörter brauchen mind. 12 Zeichen).
+- Kein Registrierungs-Link auf der Login-Seite? `signup_enabled` ist eine Server-Einstellung:
+  als Admin einloggen → Settings → Server settings → Signup einschalten
+  (optional mit E-Mail-Verifizierung und Admin-Freigabe).
+
 ## Reboot-Test (Reboot-sicher belegen)
 
 ```bash
