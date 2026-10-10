@@ -503,10 +503,15 @@ msg_info "Verifiziere Installation ..."
 sleep 5
 for svc in "$APP" postgresql redis-server caddy; do
   state="$(pct exec "$CT_ID" -- systemctl is-active "$svc" 2>&1 || true)"
-  if [[ "$state" == "active" ]]; then
-    msg_ok "Service läuft (systemctl is-active $svc = active)."
+  # "activating" ist beim Erststart normal (Import + Migrationen dauern) —
+  # Bereitschaft entscheidet das HTTP-Polling danach.
+  if [[ "$state" == "active" || "$state" == "activating" ]]; then
+    msg_ok "Service läuft/startet (systemctl is-active $svc = $state)."
   else
-    msg_error "Service $svc NICHT aktiv (Status: $state). Logs: pct exec $CT_ID -- journalctl -u $svc -n 100"
+    msg_error "Service $svc NICHT aktiv (Status: $state)."
+    msg_error "--- journalctl -u $svc (letzte 50 Zeilen, für Diagnose) ---"
+    pct exec "$CT_ID" -- journalctl -u "$svc" -n 50 --no-pager || true
+    msg_error "Logs: pct exec $CT_ID -- journalctl -u $svc -n 100"
     exit 1
   fi
 done
