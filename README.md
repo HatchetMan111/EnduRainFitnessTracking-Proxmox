@@ -95,11 +95,17 @@ kennt den Proxy (`BEHIND_PROXY=true`, `TRUSTED_PROXIES=127.0.0.1`).
 
 Strava zu verbinden ist **optional**. Aktivitäten kommen auf drei Wegen rein:
 
-1. **Mobile App (aufzeichnen wie bei Strava):** Die Endurain-App läuft live mit Karte mit
-   (Run, Ride, Walk, Hike), arbeitet offline und lädt bei Verbindung auf deinen Server —
-   dort `https://<LXC-IP>` als Server eintragen. Stand: Android in Entwicklung (Play folgt),
-   iOS als TestFlight-Beta (siehe endurain.com). Hinweis: self-signed Zertifikat ggf. auf dem
-   Handy akzeptieren bzw. die CA installieren.
+1. **Mobile App (aufzeichnen wie bei Strava):** Die Endurain-App
+   ([endurain-flutter](https://github.com/endurain-project/endurain-flutter), Flutter)
+   läuft live mit Karte mit (Run, Ride, Walk, Hike), arbeitet offline und lädt bei
+   Verbindung auf deinen Server — dort `https://<LXC-IP>` als Server eintragen.
+   iOS: öffentliche Beta über [TestFlight](https://testflight.apple.com/join/BjZ4DWPa)
+   (Apple-TestFlight-App aus dem App Store installieren, Einladungs-Link öffnen;
+   Beta-Builds laufen ab und müssen aktualisiert werden). Android: in Entwicklung, Play folgt.
+   Hinweis: iPhones vertrauen self-signed Zertifikaten nicht — ggf. die Caddy-CA
+   (`/root/.local/share/caddy/pki/authorities/local/root.crt` aus dem Container) als Profil
+   installieren und unter Einstellungen → Allgemein → Info → Zertifikatsvertrauenseinstellungen
+   voll vertrauen. Handy muss im Heimnetz sein (Server nur per LAN-IP erreichbar).
 2. **Datei-Upload (geht immer, ohne alles):** `.gpx`/`.tcx`/`.fit` (bevorzugt `.fit`) über die
    Web-UI importieren — z. B. von Radcomputer, Uhr oder anderen Apps exportiert.
 3. **Sync (optional):** Strava- oder Garmin-Connect-Konto in den User-Einstellungen
