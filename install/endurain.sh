@@ -514,14 +514,37 @@ done
 if pct exec "$CT_ID" -- curl -fs "http://localhost:${APP_PORT}/api/v1/about" >/dev/null 2>&1; then
   msg_ok "Backend antwortet (HTTP 200 auf localhost:${APP_PORT}/api/v1/about)."
 else
-  msg_error "Backend antwortet NICHT auf localhost:${APP_PORT}. Prüfe: pct exec $CT_ID -- journalctl -u $APP -n 100"
-  exit 1
+  # Erster Start braucht DB-Migrationen + Startup-Syncs → pollen statt einmalig zu prüfen.
+  msg_info "Backend noch nicht bereit – warte bis zu 3 Minuten (Erststart inkl. Migrationen) ..."
+  BACKEND_OK=0
+  for _i in $(seq 1 36); do
+    sleep 5
+    if pct exec "$CT_ID" -- curl -fs "http://localhost:${APP_PORT}/api/v1/about" >/dev/null 2>&1; then
+      BACKEND_OK=1
+      break
+    fi
+    if (( _i % 6 == 0 )); then msg_info "… noch kein Backend nach $((_i*5))s, warte weiter ..."; fi
+  done
+  if [[ "$BACKEND_OK" -eq 1 ]]; then
+    msg_ok "Backend antwortet (HTTP 200 auf localhost:${APP_PORT}/api/v1/about)."
+  else
+    msg_error "Backend antwortet NICHT auf localhost:${APP_PORT}."
+    msg_error "--- journalctl -u $APP (letzte 50 Zeilen, für Diagnose) ---"
+    pct exec "$CT_ID" -- journalctl -u "$APP" -n 50 --no-pager || true
+    msg_error "--- Neustart-Zähler ---"
+    pct exec "$CT_ID" -- systemctl show "$APP" -p NRestarts --no-pager || true
+    msg_error "Vollständiges Host-Log: $LOG_FILE"
+    exit 1
+  fi
 fi
 
 if pct exec "$CT_ID" -- curl -kfs "https://localhost/api/v1/about" >/dev/null 2>&1; then
   msg_ok "HTTPS-Proxy antwortet (HTTP 200 via Caddy auf https://localhost/api/v1/about, -k wegen self-signed)."
 else
-  msg_error "HTTPS-Proxy antwortet NICHT. Prüfe: pct exec $CT_ID -- journalctl -u caddy -n 100"
+  msg_error "HTTPS-Proxy antwortet NICHT."
+  msg_error "--- journalctl -u caddy (letzte 50 Zeilen, für Diagnose) ---"
+  pct exec "$CT_ID" -- journalctl -u caddy -n 50 --no-pager || true
+  msg_error "Backend direkt prüfen: pct exec $CT_ID -- journalctl -u $APP -n 100"
   exit 1
 fi
 
