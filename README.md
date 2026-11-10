@@ -27,6 +27,16 @@ bash endurain.sh --domain endurain.duckdns.org --dns-provider duckdns --dns-toke
 # ... funktioniert auch als Env: DOMAIN=... DNS_PROVIDER=... DNS_TOKEN=... bash endurain.sh
 ```
 
+**Interaktiv statt Flags:** Lässt du alle Domain-Flags weg und startest in einem Terminal,
+fragt der Installer direkt ab:
+
+1. **Domain** (z.B. `endurain.duckdns.org`, Enter = überspringen → self-signed-Modus),
+2. **DNS-Provider** (1 = duckdns, 2 = cloudflare),
+3. **Token** (Eingabe versteckt, landet nicht im Log),
+4. falls übersprungen: ob der **Plain-HTTP-Fallback-Port** für die App aktiviert werden soll.
+
+`NONINTERACTIVE=1` schaltet die Abfrage ab (Automatisierung/Pipes fragen ohnehin nicht).
+
 > Die systemd-Unit liegt unter `systemd/endurain.service` desselben Repos und wird
 > vom Installer von dort geladen (Fallback: Inline-Unit im Script).
 
@@ -124,6 +134,9 @@ Gratis-Option **DuckDNS** (ca. 5 Minuten):
    ```bash
    bash endurain.sh --ctid <ID> --domain endurain.duckdns.org --dns-provider duckdns --dns-token <TOKEN>
    ```
+
+   **Oder ganz ohne Flags:** der Installer fragt im interaktiven Terminal nach Domain,
+   Provider und Token – Subdomain und Token bereitlegen genügt (auch beim Update-Rerun).
 
    Der Installer stellt automatisch das Let's-Encrypt-Zertifikat aus (DNS-01, braucht **keinen**
    offenen Port 80/443 im Router!) und **setzt den DuckDNS-A-Record auf die LAN-IP des

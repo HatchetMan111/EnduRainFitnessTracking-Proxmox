@@ -23,6 +23,8 @@
 #   DOMAIN=endurain.duckdns.org DNS_TOKEN=<duckdns-token> bash endurain.sh --ctid 150
 #   bash endurain.sh --ctid 150 --domain endurain.duckdns.org --dns-provider duckdns --dns-token <token>
 # Alternativ ohne Domain: --app-http-port 8081 (Plain-HTTP nur für die App).
+# Ohne --domain fragt das Script im interaktiven Terminal nach Domain/Provider/Token
+# (Enter = überspringen; NONINTERACTIVE=1 unterdrückt die Abfrage).
 #
 # Installer-Repo: https://github.com/HatchetMan111/EnduRainFitnessTracking-Proxmox
 #
@@ -114,7 +116,8 @@ Optionen:
   --ssh-key PATH        SSH Public Key in den Container übernehmen (optional)
   --domain NAME        DNS-Name (z.B. endurain.duckdns.org) → Let's-Encrypt-Zertifikat via
                        DNS-01-Challenge: offizielle Mobile-App (TestFlight) verbindet sich,
-                       Server bleibt LAN-only (kein Port-Forwarding nötig)
+                       Server bleibt LAN-only (kein Port-Forwarding nötig;
+                       ohne Angabe interaktiv im Terminal abgefragt)
   --dns-provider P     duckdns (Default) oder cloudflare – DNS-Provider für --domain
   --dns-token TOKEN    DuckDNS-/Cloudflare-API-Token (Pflicht bei --domain)
   --cf-zone-id ID      optional: Cloudflare Zone-ID (bei --dns-provider cloudflare)
@@ -157,12 +160,18 @@ done
 # ---------------------------------------------------------------------------
 # Domain-Modus validieren (offizielle Mobile-App braucht öffentlich vertrautes Zertifikat)
 # ---------------------------------------------------------------------------
+normalize_domain() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's#^[a-z]+://##; s#/+$##'
+}
+valid_domain() {
+  [[ "$1" == *.* && "$1" != *' '* ]]
+}
 APP_DOMAIN=""
 DNS_PROVIDER=""
 APP_HTTP_PORT="$APP_HTTP_PORT_ARG"
 if [[ -n "$DOMAIN_ARG" ]]; then
-  APP_DOMAIN="$(printf '%s' "$DOMAIN_ARG" | tr '[:upper:]' '[:lower:]' | sed -E 's#^[a-z]+://##; s#/+$##')"
-  [[ "$APP_DOMAIN" == *.* && "$APP_DOMAIN" != *' '* ]] || { msg_error "--domain sieht nicht wie einen DNS-Namen aus: '$APP_DOMAIN'"; exit 1; }
+  APP_DOMAIN="$(normalize_domain "$DOMAIN_ARG")"
+  valid_domain "$APP_DOMAIN" || { msg_error "--domain sieht nicht wie einen DNS-Namen aus: '$APP_DOMAIN'"; exit 1; }
   case "$DNS_PROVIDER_ARG" in
     duckdns|cloudflare) DNS_PROVIDER="$DNS_PROVIDER_ARG";;
     "") DNS_PROVIDER="duckdns";;
@@ -172,6 +181,71 @@ if [[ -n "$DOMAIN_ARG" ]]; then
 fi
 if [[ -n "$APP_HTTP_PORT" ]] && ! [[ "$APP_HTTP_PORT" =~ ^[0-9]+$ ]]; then
   msg_error "--app-http-port muss numerisch sein (z.B. 8081)."; exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Interaktive Abfrage (nur wenn Flags/Env nichts gesetzt haben UND ein Terminal
+# da ist): Domain für die Mobile-App + optional Plain-HTTP-Fallback. Enter =
+# überspringen. NONINTERACTIVE=1 unterdrückt die Abfrage (CI/Pipes: kein TTY).
+# Läuft vor den Host-Prüfungen, damit der Einzeiler sofort geführt durchgeht.
+# ---------------------------------------------------------------------------
+if [[ -z "$APP_DOMAIN" && "${NONINTERACTIVE:-0}" != "1" ]] && { [[ -t 0 ]] || [[ -t 2 ]]; }; then
+  echo ""
+  msg_info "Mobile-App: die offizielle App (iOS-TestFlight) verbindet sich nur mit öffentlich"
+  msg_info "vertrautem Zertifikat. Gratis-Subdomain auf https://www.duckdns.org anlegen und hier"
+  msg_info "eintragen – der Server bleibt LAN-only (DNS-01-Challenge, kein Port-Forwarding)."
+  ASK_DOMAIN=""
+  printf '%s' "  Domain eintragen (z.B. endurain.duckdns.org, Enter = überspringen): "
+  read -r ASK_DOMAIN </dev/tty || ASK_DOMAIN=""
+  ASK_DOMAIN="${ASK_DOMAIN// }"
+  while [[ -n "$ASK_DOMAIN" ]]; do
+    APP_DOMAIN="$(normalize_domain "$ASK_DOMAIN")"
+    if valid_domain "$APP_DOMAIN"; then break; fi
+    APP_DOMAIN=""
+    msg_warn "'$ASK_DOMAIN' sieht nicht wie ein DNS-Name aus (Beispiel: endurain.duckdns.org)."
+    printf '%s' "  Domain (Enter = überspringen): "
+    read -r ASK_DOMAIN </dev/tty || ASK_DOMAIN=""
+    ASK_DOMAIN="${ASK_DOMAIN// }"
+  done
+  if [[ -n "$APP_DOMAIN" ]]; then
+    echo "  DNS-Provider für die Zertifikats-Challenge: [1] duckdns (Default)  [2] cloudflare"
+    printf '%s' "  Provider [1]: "
+    ASK_PROV=""
+    read -r ASK_PROV </dev/tty || ASK_PROV=""
+    case "${ASK_PROV// }" in
+      2|cloudflare) DNS_PROVIDER="cloudflare";;
+      *)            DNS_PROVIDER="duckdns";;
+    esac
+    _TOKEN_LABEL="DuckDNS-Token"
+    [[ "$DNS_PROVIDER" == "cloudflare" ]] && _TOKEN_LABEL="Cloudflare-API-Token (Zone:Read + DNS:Edit)"
+    printf '%s' "  $_TOKEN_LABEL (Eingabe versteckt): "
+    ASK_TOKEN=""
+    read -rs ASK_TOKEN </dev/tty || ASK_TOKEN=""
+    echo ""
+    if [[ -z "${ASK_TOKEN// }" ]]; then
+      msg_warn "Kein Token eingegeben → Domain-Modus übersprungen (self-signed-Modus)."
+      APP_DOMAIN=""
+      DNS_PROVIDER=""
+    else
+      DNS_TOKEN_ARG="${ASK_TOKEN// }"
+      if [[ "$DNS_PROVIDER" == "cloudflare" ]]; then
+        printf '%s' "  Cloudflare Zone-ID (optional, Enter = automatisch ermitteln): "
+        ASK_ZONE=""
+        read -r ASK_ZONE </dev/tty || ASK_ZONE=""
+        CF_ZONE_ID_ARG="${ASK_ZONE// }"
+      fi
+      msg_ok "Domain-Modus aktiv: $APP_DOMAIN ($DNS_PROVIDER) – App verbindet sich nach der Installation."
+    fi
+  fi
+  if [[ -z "$APP_DOMAIN" && -z "$APP_HTTP_PORT" ]]; then
+    printf '%s' "  Ohne Domain: Plain-HTTP-Fallback für die Mobile-App aktivieren? Port (z.B. 8081, Enter = nein): "
+    ASK_HTTP=""
+    read -r ASK_HTTP </dev/tty || ASK_HTTP=""
+    ASK_HTTP="${ASK_HTTP// }"
+    if [[ "$ASK_HTTP" =~ ^[0-9]+$ ]]; then
+      APP_HTTP_PORT="$ASK_HTTP"
+    fi
+  fi
 fi
 
 # ---------------------------------------------------------------------------
