@@ -582,7 +582,7 @@ if [[ -n "\$APP_DOMAIN" ]]; then
   fi
   ACME="/root/.acme.sh/acme.sh"
   case "\$DNS_PROVIDER" in
-    duckdns)    export Duck_Token="\$DNS_TOKEN"; ACME_DNS="dns_duckdns";;
+    duckdns)    export DuckDNS_Token="\$DNS_TOKEN"; ACME_DNS="dns_duckdns";;
     cloudflare) export CF_Token="\$DNS_TOKEN";   ACME_DNS="dns_cf";;
     *) echo "[PROV] Unbekannter DNS-Provider: \$DNS_PROVIDER"; exit 1;;
   esac
