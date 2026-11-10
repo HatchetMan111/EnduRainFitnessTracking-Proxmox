@@ -525,9 +525,12 @@ ENDURAIN_HOST=\$ENDURAIN_HOST
 BEHIND_PROXY=true
 TRUSTED_PROXIES=127.0.0.1
 # 0.20.x: RATE_LIMIT_STORAGE_URI/AUTH_SECURITY_STORAGE_URI sind entfernt – die App
-# verweigert sonst den Start (check_deprecated_env_vars). Gemeinsamer Redis-Endpunkt
-# heißt jetzt REDIS_URL (Präzedenz: STATE_URI -> REDIS_URL -> memory://).
-REDIS_URL=redis://localhost:6379/0
+# verweigert sonst den Start (check_deprecated_env_vars). Redis-State ist jetzt die
+# optionale 'distributed'-Extra-Gruppe (uv sync --extra distributed + REDIS_URL);
+# redis-py ist im Default-Venv NICHT enthalten → mit REDIS_URL bräuchte der Start
+# 'redis' prerequisite. Für den lokalen Einzelknoten gilt upstreams Default memory://:
+# bewusst KEINE REDIS_URL-Zeile setzen.
+# Redis-server bleibt installiert/aktiv (unkritisch, für späteren Distributed-Modus).
 
 POSTGRES_DB=\$PG_DB_NAME
 POSTGRES_USER=\$PG_DB_USER

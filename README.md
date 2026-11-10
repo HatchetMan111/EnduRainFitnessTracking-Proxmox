@@ -46,7 +46,7 @@ fragt der Installer direkt ab (die Gratis-Subdomain + Token legst du vorher auf
 |---|---|
 | App-Name / Hostname | `endurain` |
 | Zweck | Self-hosted Fitness-Tracking (Strava-Alternative): Aktivitäten via .gpx/.tcx/.fit, Strava-/Garmin-Sync, Karten, Statistiken – volle Datenhoheit |
-| Tech-Stack | Python 3.13/FastAPI (uv, `uvicorn main:app` nur auf `127.0.0.1:8080` mit `--proxy-headers`) + Vue 3 SPA (`npm ci` + `npm run build` nach `/opt/endurain/frontend/dist`) + PostgreSQL (+PostGIS) + Redis lokal + Caddy v2.11.7 (Binary von GitHub Releases, `:443`, HTTP→HTTPS-Redirect; Zertifikat: `tls internal` self-signed **oder** Let's Encrypt via acme.sh DNS-01) |
+| Tech-Stack | Python 3.13/FastAPI (uv, `uvicorn main:app` nur auf `127.0.0.1:8080` mit `--proxy-headers`) + Vue 3 SPA (`npm ci` + `npm run build` nach `/opt/endurain/frontend/dist`) + PostgreSQL (+PostGIS) + Redis (installiert; App-State läuft per Upstream-Default `memory://` im Prozess – Redis wäre erst für den Multi-Node-„distributed"-Modus relevant) + Caddy v2.11.7 (Binary von GitHub Releases, `:443`, HTTP→HTTPS-Redirect; Zertifikat: `tls internal` self-signed **oder** Let's Encrypt via acme.sh DNS-01) |
 | GitHub-Repo (Upstream) | `https://github.com/endurain-project/endurain` |
 | Web UI | `https://<LXC-IP>` (HTTP auf Port 80 leitet um; Health: `/api/v1/about`; Browser-Warnung wegen self-signed einmal bestätigen) – im Domain-Modus zusätzlich `https://<domain>` ohne Warnung |
 | Mobile-App | self-signed: **geht nicht** (App akzeptiert keine self-signed Zertifikate) → Domain-Modus (`--domain`, Let's Encrypt via DNS-01) oder Plain-HTTP-Fallback (`--app-http-port 8081`) – siehe [Mobile-App verbinden](#mobile-app-verbinden-offizielle-app--ios-testflight) |
@@ -255,6 +255,11 @@ manuell testen: `pct exec 100 -- /root/.acme.sh/acme.sh --renew -d endurain.duck
   Code-Pull) und installiert exakt diese Version (Operator-Präfixe wie `==` werden abgestreift).
   Scheitert `uv sync` mit `Required uv version ... does not match`, ist die Upstream-Pinne
   gestiegen → einfach den Installer erneut laufen lassen (installiert dann die neue uv-Version).
+- Backend-Start mit `limits.errors.ConfigurationError: 'redis' prerequisite not available`:
+  die `.env` enthält `REDIS_URL`, aber redis-py ist im Default-Venv nicht enthalten
+  (0.20.x: Redis gibt es nur als `--extra distributed` für Multi-Node). Einzelknoten:
+  `REDIS_URL`-Zeile aus `/opt/endurain/.env` entfernen → App nutzt Upstreams
+  `memory://`-Default (macht der Installer seit dem Fix automatisch).
 - Erster Start dauert: Alembic-Migrationen laufen beim ersten Boot automatisch.
 
 ## Dateien
