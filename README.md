@@ -251,6 +251,10 @@ manuell testen: `pct exec 100 -- /root/.acme.sh/acme.sh --renew -d endurain.duck
   erkennbar an `TypeError: cannot use a string pattern on a bytes-like object`).
   Prüfen: `pct exec <CT> -- su postgres -c "psql -Atc \"SELECT pg_encoding_to_char(encoding) FROM pg_database WHERE datname='enduraindb'\""`.
   Der Installer legt fehlende/SQL_ASCII-DBs automatisch als UTF8 neu an; bestehende UTF8-DBs tastet er nie an.
+- uv-Pinne: der Installer liest `required-version` aus `backend/pyproject.toml` (**nach** dem
+  Code-Pull) und installiert exakt diese Version (Operator-Präfixe wie `==` werden abgestreift).
+  Scheitert `uv sync` mit `Required uv version ... does not match`, ist die Upstream-Pinne
+  gestiegen → einfach den Installer erneut laufen lassen (installiert dann die neue uv-Version).
 - Erster Start dauert: Alembic-Migrationen laufen beim ersten Boot automatisch.
 
 ## Dateien

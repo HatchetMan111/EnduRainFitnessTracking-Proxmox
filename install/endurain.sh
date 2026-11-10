@@ -411,32 +411,6 @@ if ! command -v node >/dev/null 2>&1 || ! node --version | grep -Eq "v(22|24|25|
 fi
 echo "[PROV] node=\$(node --version) npm=\$(npm --version)"
 
-# --- uv (deterministisch gepinnt, Fallback 0.12.23 = Upstream required-version) ---
-# Hinweis: NICHT via astral.sh/install.sh — dessen Pinning per UV_VERSION-Env
-# ist unzuverlässig (lud 0.13.0 statt 0.12.23, Binary landete nicht im PATH).
-UV_WANT="0.12.23"
-if [[ -f "\$APP_DIR/backend/pyproject.toml" ]]; then
-  _uv_want="\$(grep -Po 'required-version\\s*=\\s*\"\\K[^\"]+' "\$APP_DIR/backend/pyproject.toml" 2>/dev/null || true)"
-  [[ -n "\${_uv_want:-}" ]] && UV_WANT="\$_uv_want"
-fi
-if ! command -v uv >/dev/null 2>&1 || ! uv --version 2>/dev/null | grep -q "\$UV_WANT"; then
-  echo "[PROV] installiere uv \$UV_WANT ..."
-  # Karteileiche aus fehlgeschlagenem install.sh-Versuch (falsche Version, nicht im PATH)
-  rm -f /root/.local/bin/uv /root/.local/bin/uvx 2>/dev/null || true
-  if ! curl -LsSf "https://github.com/astral-sh/uv/releases/download/\${UV_WANT}/uv-x86_64-unknown-linux-gnu.tar.gz" -o /tmp/uv.tgz \
-    || ! tar xzf /tmp/uv.tgz -C /tmp \
-    || ! install -m 0755 /tmp/uv-x86_64-unknown-linux-gnu/uv /usr/local/bin/uv; then
-    echo "[PROV] Direkt-Download fehlgeschlagen, Fallback: install.sh ..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null
-    export PATH="\$HOME/.local/bin:\$HOME/.cargo/bin:\$PATH"
-    _uv_bin="\$(command -v uv 2>/dev/null || find /root/.local /root/.cargo /usr/local -name uv -type f 2>/dev/null | head -n1 || true)"
-    [[ -n "\${_uv_bin:-}" ]] && ln -sf "\$_uv_bin" /usr/local/bin/uv
-  fi
-  rm -rf /tmp/uv.tgz /tmp/uv-x86_64-unknown-linux-gnu
-  hash -r 2>/dev/null || true
-fi
-echo "[PROV] uv=\$(uv --version)"
-
 # --- Service-User + Verzeichnisse ---
 id -u "$APP_USER" >/dev/null 2>&1 || useradd -r -m -d "/home/$APP_USER" -s /bin/bash "$APP_USER"
 mkdir -p "\$DATA_BASE/data" "\$DATA_BASE/logs"
@@ -457,6 +431,47 @@ else
 fi
 rm -rf "\$APP_DIR/docs" "\$APP_DIR/screenshot_01.png" "\$APP_DIR/docker-compose.yml.example" 2>/dev/null || true
 chown -R "$APP_USER:$APP_USER" "\$APP_DIR"
+
+# --- uv (deterministisch gepinnt auf die pyproject.toml-Version) ---
+# WICHTIG: steht bewusst NACH dem App-Code-Pull – sonst wird die Pinne aus der
+# ALTEN Code-Version gelesen (Fehlbild: Re-Run las uv 0.12.23 stehen, während
+# Upstream auf 0.12.24 gegangen war → "Required uv version ==0.12.24" in uv sync).
+# Operator-Präfixe (==, >= …) werden abgestreift – Release-Tag und Versions-Check
+# brauchen die nackte Version. Primär: GitHub-Release-Tarball; Fallback:
+# astral.sh-VERSIONIERTE install.sh (die unversionierte lud mal 0.13.0 statt der
+# gepinnten Version und landete nicht im PATH).
+UV_WANT="0.12.24"
+if [[ -f "\$APP_DIR/backend/pyproject.toml" ]]; then
+  _uv_want="\$(grep -Po 'required-version\\s*=\\s*\"\\K[^\"]+' "\$APP_DIR/backend/pyproject.toml" 2>/dev/null || true)"
+  _uv_want="\$(printf '%s' "\${_uv_want:-}" | sed -E 's/^[=<>!~^]+//' | tr -d '[:space:]')"
+  [[ -n "\${_uv_want:-}" ]] && UV_WANT="\$_uv_want"
+fi
+if ! command -v uv >/dev/null 2>&1 || ! uv --version 2>/dev/null | grep -q "\$UV_WANT"; then
+  echo "[PROV] installiere uv \$UV_WANT ..."
+  # Karteileiche aus fehlgeschlagenem install.sh-Versuch (falsche Version, nicht im PATH)
+  rm -f /root/.local/bin/uv /root/.local/bin/uvx 2>/dev/null || true
+  if ! curl -LsSf "https://github.com/astral-sh/uv/releases/download/\${UV_WANT}/uv-x86_64-unknown-linux-gnu.tar.gz" -o /tmp/uv.tgz \
+    || ! tar xzf /tmp/uv.tgz -C /tmp \
+    || ! install -m 0755 /tmp/uv-x86_64-unknown-linux-gnu/uv /usr/local/bin/uv; then
+    echo "[PROV] Direkt-Download fehlgeschlagen, Fallback: versionierte install.sh ..."
+    # ||-Abfangen nötig: unter set -euo pipefail würde ein fehlender Fallback-Download
+    # das Script sonst ohne die klare Fehlermeldung der Verifikation darunter abbrechen.
+    curl -LsSf "https://astral.sh/uv/\${UV_WANT}/install.sh" | sh >/dev/null \
+      || echo "[PROV] WARNUNG: Fallback-Install fehlgeschlagen – Details in der Verifikation unten."
+    export PATH="\$HOME/.local/bin:\$HOME/.cargo/bin:\$PATH"
+    _uv_bin="\$(command -v uv 2>/dev/null || find /root/.local /root/.cargo /usr/local -name uv -type f 2>/dev/null | head -n1 || true)"
+    [[ -n "\${_uv_bin:-}" ]] && ln -sf "\$_uv_bin" /usr/local/bin/uv
+  fi
+  rm -rf /tmp/uv.tgz /tmp/uv-x86_64-unknown-linux-gnu
+  hash -r 2>/dev/null || true
+fi
+# Früh und laut scheitern, statt sich erst tief im uv sync zu verheddern:
+if ! command -v uv >/dev/null 2>&1 || ! uv --version 2>/dev/null | grep -q "\$UV_WANT"; then
+  echo "[PROV] FEHLER: uv ist nicht Version \$UV_WANT (gefunden: \$(command -v uv 2>/dev/null || echo fehlt) → \$(uv --version 2>/dev/null || echo '-'))."
+  echo "[PROV] Manuell: curl -LsSf https://github.com/astral-sh/uv/releases/download/\${UV_WANT}/uv-x86_64-unknown-linux-gnu.tar.gz -o /tmp/uv.tgz && tar xzf /tmp/uv.tgz -C /tmp && install -m 0755 /tmp/uv-x86_64-unknown-linux-gnu/uv /usr/local/bin/uv"
+  exit 1
+fi
+echo "[PROV] uv=\$(uv --version) (pyproject-Pinne: \$UV_WANT)"
 
 # --- PostgreSQL Rolle + DB (idempotent) ---
 echo "[PROV] richte PostgreSQL ein ..."
