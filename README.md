@@ -28,7 +28,9 @@ bash endurain.sh --domain endurain.duckdns.org --dns-provider duckdns --dns-toke
 ```
 
 **Interaktiv statt Flags:** Lässt du alle Domain-Flags weg und startest in einem Terminal,
-fragt der Installer direkt ab:
+fragt der Installer direkt ab (die Gratis-Subdomain + Token legst du vorher auf
+[duckdns.org](https://www.duckdns.org) an – Schritt für Schritt in
+[Weg A](#weg-a-empfohlen-domain--lets-encrypt-via-dns-01--server-bleibt-im-lan)):
 
 1. **Domain** (z.B. `endurain.duckdns.org`, Enter = überspringen → self-signed-Modus),
 2. **DNS-Provider** (1 = duckdns, 2 = cloudflare),
@@ -125,24 +127,39 @@ Caddy-CAs bringen der App nichts. Es gibt drei Wege:
 
 ### Weg A (empfohlen): Domain + Let's Encrypt via DNS-01 – Server bleibt im LAN
 
-Gratis-Option **DuckDNS** (ca. 5 Minuten):
+Gratis-Option **DuckDNS** (einmalig ca. 5 Minuten):
 
-1. Auf [duckdns.org](https://www.duckdns.org) mit einem Login anmelden, eine Subdomain anlegen
-   (z. B. `endurain`) und das Konto-Token kopieren.
-2. Installer mit Domain laufen lassen (bei bestehendem CT einfach erneut laufen lassen = Update):
+1. **DuckDNS einrichten:**
+   - Auf [duckdns.org](https://www.duckdns.org) anmelden – geht über ein bestehendes
+     Konto (GitHub, Google, Reddit, …), kein eigenes Passwort nötig.
+   - Nach dem Login steht **ganz oben auf der Seite** dein persönlicher
+     **Konto-Token** (lange Zeichenkette, daneben „copy") – den **kopierst du dir**,
+     genau den fragt der Installer später ab (Eingabe versteckt).
+   - Im Feld **„add domain"** oben einen Namen eintragen (z. B. `endurain`) und
+     **add domain** klicken → deine Domain heißt komplett `endurain.duckdns.org`.
+     Die dort angezeigte IP kannst du ignorieren – der Installer setzt den
+     A-Record automatisch auf die Container-IP.
+2. **Installer laufen lassen – mit Flags** (bei bestehendem CT einfach erneut laufen lassen = Update):
 
    ```bash
    bash endurain.sh --ctid <ID> --domain endurain.duckdns.org --dns-provider duckdns --dns-token <TOKEN>
    ```
 
-   **Oder ganz ohne Flags:** der Installer fragt im interaktiven Terminal nach Domain,
-   Provider und Token – Subdomain und Token bereitlegen genügt (auch beim Update-Rerun).
+   **Oder ohne Flags:** der Installer fragt dann interaktiv ab – in dieser Reihenfolge:
+
+   ```text
+   Domain eintragen (z.B. endurain.duckdns.org, Enter = überspringen): endurain.duckdns.org
+   DNS-Provider für die Zertifikats-Challenge: [1] duckdns (Default)  [2] cloudflare
+   Provider [1]: 1
+   DuckDNS-Token (Eingabe versteckt): <einfügen, z.B. mit Rechtsklick/Shift+Einfg>
+   ```
 
    Der Installer stellt automatisch das Let's-Encrypt-Zertifikat aus (DNS-01, braucht **keinen**
    offenen Port 80/443 im Router!) und **setzt den DuckDNS-A-Record auf die LAN-IP des
    Containers** – die Domain löst also im Heimnetz direkt auf deinen Server auf, von außen ist
-   nichts erreichbar.
-3. In der App: **Protokoll `https`**, Server-Adresse **`endurain.duckdns.org`**
+   nichts erreichbar. Am Ende bestätigt die Zeile
+   `Mobile-App-tauglich: https://endurain.duckdns.org/… → HTTP 200 ohne -k`, dass die App verbinden kann.
+3. **In der App:** **Protokoll `https`**, Server-Adresse **`endurain.duckdns.org`**
    (ohne `https://` davor). Handy muss im Heimnetz sein (oder du richtest VPN/WireGuard ein).
 
 Alternativ `--dns-provider cloudflare --dns-token <CF-API-Token>` (Token mit Zone:Read + DNS:Edit,
