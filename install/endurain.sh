@@ -576,6 +576,8 @@ if [[ -n "\$APP_DOMAIN" ]]; then
   apt-get install -y -qq cron >/dev/null 2>&1 || true
   systemctl enable --now cron >/dev/null 2>&1 || true
   if [[ ! -x /root/.acme.sh/acme.sh ]]; then
+    # Halbe Klone aus unterbrochenen Läufen entfernen, sonst scheitert der Clone für immer
+    rm -rf /root/.acme.sh
     git clone --depth 1 https://github.com/acmesh-official/acme.sh /root/.acme.sh
   fi
   ACME="/root/.acme.sh/acme.sh"
@@ -608,10 +610,13 @@ if [[ -n "\$APP_DOMAIN" ]]; then
     exit 1
   fi
   mkdir -p "\$CERT_DIR"
+  # reloadcmd nicht-fatal: acme.sh führt ihn SOFORT aus – hier existiert Caddy noch gar nicht
+  # (TLS-Sektion vor Caddy-Sektion); der echte Reload passiert gleich in der Caddy-Sektion.
+  # Ohne Abfangen failt acme.sh --install-cert ("Reload error") und reißt die Provision mit.
   "\$ACME" --install-cert -d "\$APP_DOMAIN" --ecc \
     --fullchain-file "\$CERT_DIR/endurain.fullchain.pem" \
     --key-file "\$CERT_DIR/endurain.key.pem" \
-    --reloadcmd "systemctl reload caddy || systemctl restart caddy"
+    --reloadcmd "systemctl reload caddy 2>/dev/null || systemctl restart caddy 2>/dev/null || true"
   chmod 600 "\$CERT_DIR/endurain.key.pem"
   echo "[PROV] Let's-Encrypt-Zertifikat installiert (Auto-Renewal: acme.sh-cron + Caddy-reload)."
 fi
