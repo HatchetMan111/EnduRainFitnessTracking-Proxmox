@@ -16,6 +16,14 @@
 #   CT_ID=150 CORES=2 RAM=4096 DISK=8 bash -c "$(wget -qLO - https://raw.githubusercontent.com/HatchetMan111/EnduRainFitnessTracking-Proxmox/main/install/endurain.sh)"
 #   bash endurain.sh --ctid 150 --cores 2 --memory 4096 --disk 8 --bridge vmbr0 --debug
 #
+# Mobile-App (offizielle App / iOS-TestFlight) braucht ein ÖFFENTLICH vertrautes
+# Zertifikat (kein badCertificateCallback in der App → self-signed unmöglich, vgl.
+# endurain-project/endurain#727). Weg dorthin OHNE Port-Forwarding: Let's Encrypt
+# via DNS-01-Challenge (Default: DuckDNS) – A-Record zeigt auf die LAN-IP:
+#   DOMAIN=endurain.duckdns.org DNS_TOKEN=<duckdns-token> bash endurain.sh --ctid 150
+#   bash endurain.sh --ctid 150 --domain endurain.duckdns.org --dns-provider duckdns --dns-token <token>
+# Alternativ ohne Domain: --app-http-port 8081 (Plain-HTTP nur für die App).
+#
 # Installer-Repo: https://github.com/HatchetMan111/EnduRainFitnessTracking-Proxmox
 #
 set -euo pipefail
@@ -50,6 +58,13 @@ CT_ID_ARG="${CT_ID:-${CTID:-}}"
 CORES_ARG="${CORES:-$DEFAULT_CORES}"
 RAM_ARG="${RAM:-$DEFAULT_RAM}"
 DISK_ARG="${DISK:-$DEFAULT_DISK}"
+
+# Domain-Modus (Mobile-App-tauglich): Let's Encrypt via DNS-01, Server bleibt LAN-only
+DOMAIN_ARG="${DOMAIN:-}"
+DNS_PROVIDER_ARG="${DNS_PROVIDER:-}"
+DNS_TOKEN_ARG="${DNS_TOKEN:-}"
+CF_ZONE_ID_ARG="${CF_ZONE_ID:-}"
+APP_HTTP_PORT_ARG="${APP_HTTP_PORT:-}"   # z.B. 8081: Plain-HTTP-Listener als App-Fallback ohne Domain
 
 DEBUG="${DEBUG:-0}"
 LOG_FILE="/tmp/${APP}-install-$(date +%F-%H%M%S).log"
@@ -96,7 +111,15 @@ Optionen:
   --template-store N   Template-Storage (Default: ${DEFAULT_TEMPLATE_STORE})
   --bridge NAME        Netzwerk-Bridge (Default: ${DEFAULT_BRIDGE})
   --password PW        Root-Passwort (Default: zufällig generiert, wird angezeigt)
-  --ssh-key PATH       SSH Public Key in den Container übernehmen (optional)
+  --ssh-key PATH        SSH Public Key in den Container übernehmen (optional)
+  --domain NAME        DNS-Name (z.B. endurain.duckdns.org) → Let's-Encrypt-Zertifikat via
+                       DNS-01-Challenge: offizielle Mobile-App (TestFlight) verbindet sich,
+                       Server bleibt LAN-only (kein Port-Forwarding nötig)
+  --dns-provider P     duckdns (Default) oder cloudflare – DNS-Provider für --domain
+  --dns-token TOKEN    DuckDNS-/Cloudflare-API-Token (Pflicht bei --domain)
+  --cf-zone-id ID      optional: Cloudflare Zone-ID (bei --dns-provider cloudflare)
+  --app-http-port N    zusätzlicher Plain-HTTP-Port (z.B. 8081): Mobile-App-Fallback ohne
+                       Domain (App: Protokoll http, Adresse <CT-IP>:<PORT>)
   --debug              bash -x + maximale Fehlermeldungskette
   -h, --help           diese Hilfe
 EOF
@@ -120,11 +143,36 @@ while [[ $# -gt 0 ]]; do
     --bridge) BRIDGE="$2"; shift 2;;
     --password) PASSWORD_ARG="$2"; shift 2;;
     --ssh-key) SSH_KEY_ARG="$2"; shift 2;;
+    --domain) DOMAIN_ARG="$2"; shift 2;;
+    --dns-provider) DNS_PROVIDER_ARG="$2"; shift 2;;
+    --dns-token) DNS_TOKEN="$2"; DNS_TOKEN_ARG="$2"; shift 2;;
+    --cf-zone-id) CF_ZONE_ID_ARG="$2"; shift 2;;
+    --app-http-port) APP_HTTP_PORT_ARG="$2"; shift 2;;
     --debug) DEBUG="1"; set -x; shift;;
     -h|--help) usage; exit 0;;
     *) msg_error "Unbekannte Option: $1"; usage; exit 1;;
   esac
 done
+
+# ---------------------------------------------------------------------------
+# Domain-Modus validieren (offizielle Mobile-App braucht öffentlich vertrautes Zertifikat)
+# ---------------------------------------------------------------------------
+APP_DOMAIN=""
+DNS_PROVIDER=""
+APP_HTTP_PORT="$APP_HTTP_PORT_ARG"
+if [[ -n "$DOMAIN_ARG" ]]; then
+  APP_DOMAIN="$(printf '%s' "$DOMAIN_ARG" | tr '[:upper:]' '[:lower:]' | sed -E 's#^[a-z]+://##; s#/+$##')"
+  [[ "$APP_DOMAIN" == *.* && "$APP_DOMAIN" != *' '* ]] || { msg_error "--domain sieht nicht wie einen DNS-Namen aus: '$APP_DOMAIN'"; exit 1; }
+  case "$DNS_PROVIDER_ARG" in
+    duckdns|cloudflare) DNS_PROVIDER="$DNS_PROVIDER_ARG";;
+    "") DNS_PROVIDER="duckdns";;
+    *) msg_error "Unbekannter --dns-provider '$DNS_PROVIDER_ARG' (erlaubt: duckdns, cloudflare)."; exit 1;;
+  esac
+  [[ -n "$DNS_TOKEN_ARG" ]] || { msg_error "--domain benötigt --dns-token (DuckDNS-Token bzw. Cloudflare-API-Token)."; exit 1; }
+fi
+if [[ -n "$APP_HTTP_PORT" ]] && ! [[ "$APP_HTTP_PORT" =~ ^[0-9]+$ ]]; then
+  msg_error "--app-http-port muss numerisch sein (z.B. 8081)."; exit 1
+fi
 
 # ---------------------------------------------------------------------------
 # Host-Prüfungen
@@ -233,7 +281,13 @@ for _ in $(seq 1 30); do
 done
 [[ -n "$CT_IP" ]] || { msg_error "Keine Container-IP erhalten (DHCP/Bridge $BRIDGE prüfen)."; exit 1; }
 msg_ok "Container-IP: $CT_IP"
-ENDURAIN_HOST="https://${CT_IP}"
+# Domain-Modus: ENDURAIN_HOST (Backend-Links/SSO) auf die Domain, nicht die IP
+if [[ -n "$APP_DOMAIN" ]]; then
+  ENDURAIN_HOST="https://${APP_DOMAIN}"
+  msg_info "Domain-Modus: $APP_DOMAIN (DNS-01 über $DNS_PROVIDER, A-Record -> $CT_IP)"
+else
+  ENDURAIN_HOST="https://${CT_IP}"
+fi
 
 # ---------------------------------------------------------------------------
 # Provisionierung im Container (idempotentes Inline-Script via pct push)
@@ -249,6 +303,11 @@ PG_DB_USER="$PG_DB_USER"
 CT_IP="$CT_IP"
 ENDURAIN_HOST="$ENDURAIN_HOST"
 UPSTREAM_REPO="$UPSTREAM_REPO"
+APP_DOMAIN="$APP_DOMAIN"
+DNS_PROVIDER="$DNS_PROVIDER"
+DNS_TOKEN="$DNS_TOKEN_ARG"
+CF_ZONE_ID="$CF_ZONE_ID_ARG"
+APP_HTTP_PORT="$APP_HTTP_PORT"
 
 echo "[PROV] apt update ..."
 export DEBIAN_FRONTEND=noninteractive
@@ -417,7 +476,58 @@ uv sync --frozen --no-dev
 chown -R "$APP_USER:$APP_USER" "\$APP_DIR/backend/.venv" 2>/dev/null || true
 echo "[PROV] Backend OK."
 
-# --- Caddy HTTPS-Reverse-Proxy (self-signed, tls internal, v2.11.7) ---
+# --- TLS-Zertifikat: Let's Encrypt via DNS-01 (Mobile-App-tauglich) oder self-signed ---
+# Die offizielle Mobile-App (iOS-TestFlight/Android) akzeptiert KEINE self-signed
+# Zertifikate und keine als Profil installierten CAs (kein badCertificateCallback in
+# endurain-flutter, vgl. endurain-project/endurain#727). Weg ohne Port-Forwarding:
+# DNS-01-Challenge — der A-Record der Domain zeigt einfach auf die LAN-IP.
+CERT_DIR="/etc/caddy/certs"
+if [[ -n "\$APP_DOMAIN" ]]; then
+  echo "[PROV] Domain-Modus: hole Let's-Encrypt-Zertifikat für \$APP_DOMAIN (DNS-01 via \$DNS_PROVIDER, kein Port-Forwarding) ..."
+  apt-get install -y -qq cron >/dev/null 2>&1 || true
+  systemctl enable --now cron >/dev/null 2>&1 || true
+  if [[ ! -x /root/.acme.sh/acme.sh ]]; then
+    git clone --depth 1 https://github.com/acmesh-official/acme.sh /root/.acme.sh
+  fi
+  ACME="/root/.acme.sh/acme.sh"
+  case "\$DNS_PROVIDER" in
+    duckdns)    export Duck_Token="\$DNS_TOKEN"; ACME_DNS="dns_duckdns";;
+    cloudflare) export CF_Token="\$DNS_TOKEN";   ACME_DNS="dns_cf";;
+    *) echo "[PROV] Unbekannter DNS-Provider: \$DNS_PROVIDER"; exit 1;;
+  esac
+  [[ -n "\${CF_ZONE_ID:-}" ]] && export CF_Zone_ID="\$CF_ZONE_ID"
+  # DuckDNS: A-Record direkt auf die Container-IP setzen (Domain löst im LAN auf den Server auf,
+  # obwohl der Server nicht aus dem Internet erreichbar ist — DNS-01 braucht nur TXT-Records).
+  if [[ "\$DNS_PROVIDER" == "duckdns" && "\$APP_DOMAIN" == *.duckdns.org ]]; then
+    DUCK_SUB="\${APP_DOMAIN%.duckdns.org}"
+    echo "[PROV] setze DuckDNS-A-Record: \$APP_DOMAIN -> \$CT_IP ..."
+    DUCK_RET="\$(curl -fs --max-time 30 "https://www.duckdns.org/update?domains=\${DUCK_SUB}&token=\${DNS_TOKEN}&ip=\${CT_IP}" || true)"
+    if [[ "\$DUCK_RET" == "OK" ]]; then
+      echo "[PROV] DuckDNS-A-Record aktuell (\$APP_DOMAIN -> \$CT_IP)."
+    else
+      echo "[PROV] WARNUNG: DuckDNS-Update lieferte '\${DUCK_RET:-leer}' – A-Record notfalls manuell auf \$CT_IP setzen."
+    fi
+  fi
+  set +e
+  "\$ACME" --issue --dns "\$ACME_DNS" -d "\$APP_DOMAIN" --keylength ec-256 --server letsencrypt
+  ACME_RC=\$?
+  set -e
+  # Exit 0 = ausgestellt, Exit 2 = 'Domains not changed' (Zertifikat existiert schon) – beides OK.
+  if [[ \$ACME_RC -ne 0 && \$ACME_RC -ne 2 ]]; then
+    echo "[PROV] FEHLER: acme.sh --issue scheiterte (Exit \$ACME_RC) – Domain/Token prüfen."
+    echo "[PROV] Log: tail -n 50 /root/.acme.sh/acme.sh.log"
+    exit 1
+  fi
+  mkdir -p "\$CERT_DIR"
+  "\$ACME" --install-cert -d "\$APP_DOMAIN" --ecc \
+    --fullchain-file "\$CERT_DIR/endurain.fullchain.pem" \
+    --key-file "\$CERT_DIR/endurain.key.pem" \
+    --reloadcmd "systemctl reload caddy || systemctl restart caddy"
+  chmod 600 "\$CERT_DIR/endurain.key.pem"
+  echo "[PROV] Let's-Encrypt-Zertifikat installiert (Auto-Renewal: acme.sh-cron + Caddy-reload)."
+fi
+
+# --- Caddy HTTPS-Reverse-Proxy (v2.11.7; Domain-Modus: LE-Zert, sonst tls internal) ---
 # Hinweis: NICHT via apt/Cloudsmith — dl.cloudsmith.io antwortet mit 402 Payment Required.
 # Stattdessen deterministischer Binary-Download von GitHub Releases + eigene systemd-Unit.
 CADDY_WANT="2.11.7"
@@ -431,6 +541,24 @@ if ! command -v caddy >/dev/null 2>&1 || ! caddy version 2>/dev/null | grep -q "
 fi
 echo "[PROV] caddy=\$(caddy version)"
 mkdir -p /etc/caddy
+if [[ -n "\$APP_DOMAIN" ]]; then
+cat > /etc/caddy/Caddyfile <<CADDY_EOF
+https://\$APP_DOMAIN {
+	tls \$CERT_DIR/endurain.fullchain.pem \$CERT_DIR/endurain.key.pem
+	reverse_proxy 127.0.0.1:8080
+}
+
+# Fallback: Direktzugriff per IP im Browser (self-signed, einmal bestätigen)
+https://\$CT_IP {
+	tls internal
+	reverse_proxy 127.0.0.1:8080
+}
+
+http://\$CT_IP, http://\$APP_DOMAIN {
+	redir https://{host}{uri}
+}
+CADDY_EOF
+else
 cat > /etc/caddy/Caddyfile <<CADDY_EOF
 https://\$CT_IP {
 	tls internal
@@ -441,6 +569,17 @@ http://\$CT_IP {
 	redir https://{host}{uri}
 }
 CADDY_EOF
+fi
+# Optional: Plain-HTTP-Listener als Mobile-App-Fallback (App: Protokoll http, Host <CT-IP>:<PORT>)
+if [[ -n "\$APP_HTTP_PORT" ]]; then
+cat >> /etc/caddy/Caddyfile <<CADDY_HTTP_EOF
+
+http://:\$APP_HTTP_PORT {
+	reverse_proxy 127.0.0.1:8080
+}
+CADDY_HTTP_EOF
+echo "[PROV] App-HTTP-Fallback aktiv auf Port \$APP_HTTP_PORT (Plain-HTTP, nur für Mobile-App ohne Domain)."
+fi
 cat > /etc/systemd/system/caddy.service <<CADDYUNIT_EOF
 [Unit]
 Description=Caddy HTTPS-Reverse-Proxy (Endurain)
@@ -466,7 +605,11 @@ systemctl daemon-reload
 /usr/local/bin/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 systemctl enable --now caddy
 /usr/local/bin/caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null || systemctl restart caddy
-echo "[PROV] Caddy-HTTPS auf https://\$CT_IP aktiv (self-signed, Browser-Warnung einmal bestätigen)."
+if [[ -n "\$APP_DOMAIN" ]]; then
+  echo "[PROV] Caddy-HTTPS aktiv: https://\$APP_DOMAIN (Let's Encrypt, Mobile-App-tauglich) + https://\$CT_IP (self-signed-Fallback)."
+else
+  echo "[PROV] Caddy-HTTPS auf https://\$CT_IP aktiv (self-signed, Browser-Warnung einmal bestätigen)."
+fi
 
 # --- systemd-Service ---
 echo "[PROV] installiere systemd-Service ..."
@@ -587,6 +730,44 @@ else
   exit 1
 fi
 
+# Domain-Modus: App-taugliches HTTPS verifizieren – OHNE -k und OHNEZA-Zertifikatswarnung,
+# exakt der Pfad der Mobile-App (TLS-Handshake + öffentlich vertraute Chain müssen passen).
+if [[ -n "$APP_DOMAIN" ]]; then
+  msg_info "Prüfe https://${APP_DOMAIN} mit öffentlich vertrautem Zertifikat (ohne -k) ..."
+  DOM_OK=0
+  DOM_LAST="n/a"
+  for _k in $(seq 1 12); do
+    DOM_OUT="$(curl -s --resolve "${APP_DOMAIN}:443:${CT_IP}" -o /dev/null -w "%{http_code}" "https://${APP_DOMAIN}/api/v1/about" 2>&1)"
+    DOM_EC=$?
+    DOM_LAST="exit=${DOM_EC} http=${DOM_OUT}"
+    if [[ $DOM_EC -eq 0 && "$DOM_OUT" == "200" ]]; then
+      DOM_OK=1
+      break
+    fi
+    sleep 5
+  done
+  if [[ "$DOM_OK" -eq 1 ]]; then
+    msg_ok "Mobile-App-tauglich: https://${APP_DOMAIN}/api/v1/about → HTTP 200 ohne -k (gültiges Zertifikat)."
+    ISSUER="$(echo | openssl s_client -connect "$CT_IP:443" -servername "$APP_DOMAIN" 2>/dev/null | openssl x509 -noout -issuer 2>/dev/null || true)"
+    [[ -n "$ISSUER" ]] && msg_ok "Zertifikat-Aussteller: ${ISSUER#issuer=}"
+  else
+    msg_error "https://${APP_DOMAIN} antwortet NICHT mit gültigem Zertifikat (letzter Versuch: $DOM_LAST)."
+    msg_error "Das ist der Pfad der Mobile-App – Zertifikatsausstellung prüfen:"
+    msg_error "  pct exec $CT_ID -- tail -n 50 /root/.acme.sh/acme.sh.log"
+    msg_error "  pct exec $CT_ID -- ls -la /etc/caddy/certs/"
+    exit 1
+  fi
+  # DNS-View vom Host: löst die Domain schon auf die Container-IP auf? (nur Warnung –
+  # Propagation/Split-DNS kann nachziehen, --resolve-Check oben ist der harte Beweis)
+  RESOLVED_IP="$(getent hosts "$APP_DOMAIN" 2>/dev/null | awk '{print $1}' | head -n1 || true)"
+  if [[ -n "$RESOLVED_IP" && "$RESOLVED_IP" != "$CT_IP" ]]; then
+    msg_warn "DNS: $APP_DOMAIN löst aktuell auf $RESOLVED_IP auf, nicht auf $CT_IP (Propagation/Split-DNS)."
+    msg_warn "Handy im LAN muss die Domain auf $CT_IP auflösen können (DuckDNS-A-Record setzt der Installer automatisch)."
+  else
+    msg_ok "DNS: $APP_DOMAIN → ${RESOLVED_IP:-$CT_IP}"
+  fi
+fi
+
 # onboot sicherstellen
 pct set "$CT_ID" --onboot 1 >/dev/null 2>&1 || true
 
@@ -599,7 +780,20 @@ echo "  App          : Endurain – self-hosted Fitness-Tracking"
 echo "  Upstream     : $UPSTREAM_REPO"
 echo "  Container    : CT $CT_ID (Hostname: $HOSTNAME_ARG, unprivilegiert, onboot=1)"
 echo "  Ressourcen   : $CORES vCPU / $RAM MB RAM / $DISK GB Disk"
+if [[ -n "$APP_DOMAIN" ]]; then
+echo "  Web UI       : https://$APP_DOMAIN  (Let's Encrypt – gültiges Zertifikat)"
+echo "  Alt          : https://$CT_IP (self-signed-Fallback, Browser-Warnung)"
+echo "  Mobile-App   : Protokoll https, Server-Adresse: $APP_DOMAIN"
+echo "                 (offizielle App/TestFlight verbindet sich ohne Zertifikats-Install)"
+else
 echo "  Web UI       : https://$CT_IP  (self-signed – Browser-Warnung einmal bestätigen)"
+echo "  Mobile-App   : mit self-signed NICHT möglich! README: 'Mobile-App verbinden'"
+echo "                 (Weg A: --domain + DuckDNS | Weg B: --app-http-port 8081)"
+fi
+if [[ -n "$APP_HTTP_PORT" ]]; then
+echo "  App-Fallback : http://$CT_IP:$APP_HTTP_PORT (Plain-HTTP; App: Protokoll http,"
+echo "                 Server-Adresse: $CT_IP:$APP_HTTP_PORT – nur im Heimnetz sinnvoll)"
+fi
 echo "  API-Check    : https://$CT_IP/api/v1/about"
 echo "  Erst-Login   : admin / admin (Upstream-Default – sofort ändern!)"
 echo "  Registrieren : als Admin einloggen → Settings → Server settings → signup einschalten"
@@ -608,13 +802,24 @@ echo "  HTTP         : http://$CT_IP → Redirect auf HTTPS"
 if [[ "${GENERATED_PW:-0}" -eq 1 ]]; then
 echo "  CT-Root-PW   : $PASSWORD_ARG (nur dieses Mal angezeigt!)"
 fi
+if [[ -n "$APP_DOMAIN" ]]; then
+echo "  Update       : bash endurain.sh --ctid $CT_ID --domain $APP_DOMAIN --dns-provider $DNS_PROVIDER --dns-token <TOKEN>"
+else
 echo "  Update       : bash endurain.sh --ctid $CT_ID   (idempotent)"
+fi
 echo "  Deinstall    : pct stop $CT_ID && pct destroy $CT_ID"
 echo "  Logs (Host)  : $LOG_FILE"
 echo "  Logs (CT)    : pct exec $CT_ID -- journalctl -u $APP -n 100"
+if [[ -n "$APP_DOMAIN" ]]; then
+echo "  Zertifikat   : Let's Encrypt für $APP_DOMAIN (DNS-01 via $DNS_PROVIDER),"
+echo "                 Auto-Renewal über acme.sh-cron im Container."
+echo "                 Server bleibt LAN-only – kein Port-Forwarding nötig."
+echo "                 Bei IP-Wechsel: Installer erneut laufen lassen (setzt DuckDNS-A-Record neu)."
+else
 echo "  Hinweis      : Zertifikat ist self-signed (Caddy tls internal)."
 echo "                 Bei IP-Wechsel (DHCP): Router-Reservierung empfohlen,"
 echo "                 sonst Installer-Update erneut laufen lassen."
-echo "                 Strava-Sync braucht zusätzlich eine öffentliche"
-echo "                 https-Domain (siehe README)." 
+fi
+echo "                 Strava-Sync braucht eine öffentliche https-Domain"
+echo "                 (im Domain-Modus bereits erfüllt, siehe README)."
 echo "══════════════════════════════════════════════════════════"
