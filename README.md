@@ -161,6 +161,16 @@ Gratis-Option **DuckDNS** (einmalig ca. 5 Minuten):
    `Mobile-App-tauglich: https://endurain.duckdns.org/… → HTTP 200 ohne -k`, dass die App verbinden kann.
 3. **In der App:** **Protokoll `https`**, Server-Adresse **`endurain.duckdns.org`**
    (ohne `https://` davor). Handy muss im Heimnetz sein (oder du richtest VPN/WireGuard ein).
+4. **Router-Prüfung: DNS-Rebinding-Schutz (Fritz!Box & Co.).** Viele Router wehren public
+   Domains ab, die auf private IPs zeigen – und genau das ist hier der Normalfall
+   (`<domain>` → LAN-IP des Containers). Ohne Ausnahme kann **kein** Gerät im Heimnetz die
+   Domain auflösen → Browser zeigt „Backend nicht erreichbar", App verbindet nicht. Test:
+   am PC `nslookup <domain>` (Windows) bzw. `getent hosts <domain>` (Linux/mac) – Timeout/leer
+   = bestätigt. **Fritz!OS-Fix:** *Heimnetz → Netzwerk → Netzwerkeinstellungen →
+   „Erweiterte Netzwerkeinstellungen" → DNS-Rebind-Schutz → Ausnahmen* – dort die Domain
+   (z. B. `edurain.duckdns.org`) eintragen. Alternativ: lokalen DNS-Eintrag setzen
+   (AdGuard Home/Pi-hole: `<domain> → <LXC-IP>`; dort ggf. ebenfalls Rebinding-Schutz für
+   die Domain ausnehmen).
 
 Alternativ `--dns-provider cloudflare --dns-token <CF-API-Token>` (Token mit Zone:Read + DNS:Edit,
 optional `--cf-zone-id`); dort den A-Record auf die LAN-IP selbst setzen (DNS-only, kein Proxy!).
