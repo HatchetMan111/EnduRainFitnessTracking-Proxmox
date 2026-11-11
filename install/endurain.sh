@@ -594,14 +594,24 @@ if [[ -n "\$APP_DOMAIN" ]]; then
   [[ -n "\${CF_ZONE_ID:-}" ]] && export CF_Zone_ID="\$CF_ZONE_ID"
   # DuckDNS: A-Record direkt auf die Container-IP setzen (Domain löst im LAN auf den Server auf,
   # obwohl der Server nicht aus dem Internet erreichbar ist — DNS-01 braucht nur TXT-Records).
-  if [[ "\$DNS_PROVIDER" == "duckdns" && "\$APP_DOMAIN" == *.duckdns.org ]]; then
+  # DUCKDNS_SKIP_A_RECORD=1 überspringt das Update (Split-DNS: A-Record selbst verwalten).
+  if [[ "\$DNS_PROVIDER" == "duckdns" && "\$APP_DOMAIN" == *.duckdns.org && "\${DUCKDNS_SKIP_A_RECORD:-0}" != "1" ]]; then
     DUCK_SUB="\${APP_DOMAIN%.duckdns.org}"
     echo "[PROV] setze DuckDNS-A-Record: \$APP_DOMAIN -> \$CT_IP ..."
     DUCK_RET="\$(curl -fs --max-time 30 "https://www.duckdns.org/update?domains=\${DUCK_SUB}&token=\${DNS_TOKEN}&ip=\${CT_IP}" || true)"
     if [[ "\$DUCK_RET" == "OK" ]]; then
       echo "[PROV] DuckDNS-A-Record aktuell (\$APP_DOMAIN -> \$CT_IP)."
     else
-      echo "[PROV] WARNUNG: DuckDNS-Update lieferte '\${DUCK_RET:-leer}' – A-Record notfalls manuell auf \$CT_IP setzen."
+      # KO = Token falsch ODER Subdomain nicht im Konto – acme.sh würde am TXT-Record
+      # exakt genauso scheitern. Früh und verständlich abbrechen statt kryptischer
+      # acme.sh-Meldungen (Live-Fallstrick 2026-11-11: KO → 'response=KO' bei acme.sh).
+      echo "[PROV] FEHLER: DuckDNS hat '\${DUCK_RET:-leer}' geliefert (nicht OK)."
+      echo "[PROV] Das heißt fast immer: Token falsch ODER Subdomain '\$DUCK_SUB' nicht im DuckDNS-Konto."
+      echo "[PROV]  1) Auf https://www.duckdns.org einloggen (Konto wie beim Anlegen)"
+      echo "[PROV]  2) Token oben auf der Seite prüfen/kopieren (»copy«-Feld neben 'token')"
+      echo "[PROV]  3) Prüfen, dass '\$DUCK_SUB' in der Subdomain-Liste steht (sonst im 'add domain'-Feld anlegen)"
+      echo "[PROV]  4) Installer erneut laufen lassen – die Abfrage fragt Token/Domain neu ab."
+      exit 1
     fi
   fi
   set +e

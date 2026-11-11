@@ -165,6 +165,12 @@ Gratis-Option **DuckDNS** (einmalig ca. 5 Minuten):
 Alternativ `--dns-provider cloudflare --dns-token <CF-API-Token>` (Token mit Zone:Read + DNS:Edit,
 optional `--cf-zone-id`); dort den A-Record auf die LAN-IP selbst setzen (DNS-only, kein Proxy!).
 
+Troubleshooting: liefert DuckDNS `KO` (der Installer bricht dann mit einer Schritt-für-Schritt-
+Anleitung ab), stimmt fast immer das **Token nicht** oder die **Subdomain steht nicht im
+DuckDNS-Konto** – auf duckdns.org einloggen, Token oben auf der Seite kopieren und prüfen, dass
+die Subdomain in der Liste steht, dann den Installer erneut laufen lassen. Wer den A-Record selbst
+verwaltet (Split-DNS): `DUCKDNS_SKIP_A_RECORD=1` überspringt das DuckDNS-Update.
+
 ### Weg B (Fallback ohne Domain): Plain-HTTP-Port nur für die App
 
 Die App hat einen Protokoll-Umschalter und akzeptiert `http` für self-hosted Server
