@@ -609,7 +609,9 @@ if [[ -n "\$APP_DOMAIN" ]]; then
       # exakt genauso scheitern. Früh und verständlich abbrechen statt kryptischer
       # acme.sh-Meldungen (Live-Fallstrick 2026-11-11: KO → 'response=KO' bei acme.sh).
       echo "[PROV] FEHLER: DuckDNS hat '\${DUCK_RET:-leer}' geliefert (nicht OK)."
-      echo "[PROV] Das heißt fast immer: Token falsch ODER Subdomain '\$DUCK_SUB' nicht im DuckDNS-Konto."
+      echo "[PROV] Das heißt fast immer: Token falsch, Subdomain '\$DUCK_SUB' nicht im DuckDNS-Konto"
+      echo "[PROV] ODER ein Tippfehler im Domainnamen – buchstabier '\$DUCK_SUB' genau nach!"
+      echo "[PROV] (Hattest du hier schon erfolgreich installiert: exakt denselben Namen wie damals nehmen.)"
       echo "[PROV]  1) Auf https://www.duckdns.org einloggen (Konto wie beim Anlegen)"
       echo "[PROV]  2) Token oben auf der Seite prüfen/kopieren (»copy«-Feld neben 'token')"
       echo "[PROV]  3) Prüfen, dass '\$DUCK_SUB' in der Subdomain-Liste steht (sonst im 'add domain'-Feld anlegen)"
