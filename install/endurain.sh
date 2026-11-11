@@ -599,7 +599,10 @@ if [[ -n "\$APP_DOMAIN" ]]; then
     DUCK_SUB="\${APP_DOMAIN%.duckdns.org}"
     echo "[PROV] setze DuckDNS-A-Record: \$APP_DOMAIN -> \$CT_IP ..."
     DUCK_RET="\$(curl -fs --max-time 30 "https://www.duckdns.org/update?domains=\${DUCK_SUB}&token=\${DNS_TOKEN}&ip=\${CT_IP}" || true)"
-    if [[ "\$DUCK_RET" == "OK" ]]; then
+    # DuckDNS antwortet 'OK', bei unveränderter IP aber auch
+    # 'ip address for <domain> was already <ip> not updated' – dokumentiertes
+    # Normalverhalten (IP stimmt schon), kein Fehler. Nur KO = echtes Problem.
+    if [[ "\$DUCK_RET" == "OK" || "\$DUCK_RET" == *"not updated"* ]]; then
       echo "[PROV] DuckDNS-A-Record aktuell (\$APP_DOMAIN -> \$CT_IP)."
     else
       # KO = Token falsch ODER Subdomain nicht im Konto – acme.sh würde am TXT-Record
